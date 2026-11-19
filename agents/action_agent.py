@@ -8,9 +8,18 @@ def act(reasoning, llm):
 
 只返回命令（单行）。
 """
-    cmd = llm(prompt).strip().splitlines()[-1]
+    lines = llm(prompt).strip().splitlines()
+    if not lines:
+        return {"cmd": "", "executed": False, "result": "无可用命令"}
+
+    cmd = lines[-1].strip()
 
     if AUTO_EXECUTE and cmd:
-        result = execute_command(cmd)
+        try:
+            result = execute_command(cmd)
+        except ValueError:
+            return {"cmd": cmd, "executed": False, "result": "命令不在诊断白名单中"}
+        except OSError:
+            return {"cmd": cmd, "executed": False, "result": "无法启动诊断命令"}
         return {"cmd": cmd, "executed": True, "result": result}
     return {"cmd": cmd, "executed": False, "result": "未执行（安全模式）"}

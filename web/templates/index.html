@@ -11,20 +11,27 @@
 </head>
 <body>
   <h2>AutoOps AI Agent Pro</h2>
-  <button onclick="run()">Run Analysis</button>
-  <button onclick="history()">History</button>
+  <button id="run">Run Analysis</button>
+  <button id="history">History</button>
   <pre id="out"></pre>
   <script>
-    function run(){
-      fetch('/run').then(r=>r.json()).then(d=>{
-        document.getElementById('out').innerText = JSON.stringify(d, null, 2)
-      })
+    const output = document.getElementById('out')
+
+    async function showResult(path, options) {
+      try {
+        const response = await fetch(path, options)
+        if (!response.ok) throw new Error(`Request failed (${response.status})`)
+        output.textContent = JSON.stringify(await response.json(), null, 2)
+      } catch (error) {
+        output.textContent = error.message
+      }
     }
-    function history(){
-      fetch('/history').then(r=>r.json()).then(d=>{
-        document.getElementById('out').innerText = JSON.stringify(d, null, 2)
-      })
-    }
+
+    document.getElementById('run').addEventListener('click', () => showResult('/run', {
+      method: 'POST',
+      headers: { 'X-AutoOps-Request': '1' },
+    }))
+    document.getElementById('history').addEventListener('click', () => showResult('/history'))
   </script>
 </body>
 </html>

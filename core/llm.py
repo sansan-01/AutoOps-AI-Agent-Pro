@@ -1,18 +1,22 @@
-import os, requests, time
+import logging
+import re
+
+import requests
+
 from config import LLM_API_KEY, MODEL
+
+logger = logging.getLogger(__name__)
+
 
 def _fallback(prompt: str) -> str:
     # 简单规则兜底，保证无API Key也能演示
-    p = prompt.lower()
-    if "502" in p:
-        return "检测到大量502错误，可能是后端服务不可用或超时，优先检查后端服务与网关。"
-    if "cpu" in p:
-        return "CPU 使用率异常偏高，可能存在死循环/高负载任务，建议定位占用最高的进程。"
-    return "未检测到明显异常，请进一步检查。"
+    if re.search(r"\b502\b", prompt):
+        return "发现 502 相关文本。若为 HTTP 502，请检查后端服务与网关。"
+    return "本地规则无法确认根因，请结合系统指标和日志进一步检查。"
 
-def call_llm(prompt: str) -> str:
-    if not LLM_API_KEY:
-        return _fallback(prompt)
+def call_llm(prompt: str, *, allow_remote: bool = True, use_fallback: bool = True) -> str:
+    if not allow_remote or not LLM_API_KEY:
+        return _fallback(prompt) if use_fallback else ""
 
     url = "https://api.openai.com/v1/chat/completions"
     headers = {
@@ -25,8 +29,16 @@ def call_llm(prompt: str) -> str:
         "temperature": 0.2
     }
     try:
-        res = requests.post(url, headers=headers, json=data, timeout=30)
+        res = requests.post(
+            url, headers=headers, json=data, timeout=(5, 30), allow_redirects=False
+        )
         res.raise_for_status()
-        return res.json()["choices"][0]["message"]["content"]
-    except Exception as e:
-        return f"LLM调用失败，使用兜底策略。错误：{e}\n{_fallback(prompt)}"
+        if res.status_code != 200:
+            raise ValueError("Unexpected LLM response status")
+        content = res.json()["choices"][0]["message"]["content"]
+        if not isinstance(content, str) or not content.strip():
+            raise ValueError("Missing LLM response content")
+        return content
+    except (requests.RequestException, ValueError, KeyError, IndexError, TypeError):
+        logger.warning("LLM request failed")
+        return _fallback(prompt) if use_fallback else ""
